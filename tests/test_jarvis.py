@@ -45,7 +45,8 @@ def test_texto_limpio_para_voz():
 def test_elegir_voz():
     voces = [("Mónica", "es_ES"), ("Jorge", "es_ES"), ("Jorge (Mejorada)", "es_ES"), ("Juan", "es_MX")]
     assert elegir_voz("Jorge", voces) == "Jorge (Mejorada)"
-    assert elegir_voz("Inexistente", [("Juan", "es_MX"), ("Mónica", "es_ES")]) == "Mónica"
+    assert elegir_voz("Inexistente", [("Juan", "es_MX"), ("Mónica", "es_ES")]) == "Juan"  # masculina primero
+    assert elegir_voz("Inexistente", [("Juan", "es_MX"), ("Jorge", "es_ES")]) == "Jorge"  # y de España
 
 
 def test_filtro_jarvis_conserva_formato():
@@ -125,3 +126,8 @@ def test_error_inesperado_devuelve_json(tmp_path):
     r = cliente.post("/api/audio", files={"archivo": ("v", b"x")})
     assert r.status_code == 500
     assert r.json()["detail"] == "Error interno (RuntimeError): modelo no descargado"
+
+
+def test_elegir_voz_prefiere_masculina_si_falta_la_pedida():
+    voces = [("Marisol (Enhanced)", "es_ES"), ("Mónica", "es_ES"), ("Eddy (Español (España))", "es_ES")]
+    assert elegir_voz("Jorge", voces) == "Eddy (Español (España))"

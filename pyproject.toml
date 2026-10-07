@@ -15,7 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # Oído (Whisper), micrófono y palabra de activación. Todo local y gratis.
-voz = ["faster-whisper>=1.1", "sounddevice>=0.4", "openwakeword>=0.6"]
+# av < 19: la 19 quitó una opción que usa faster-whisper (error "metadata_errors").
+voz = ["faster-whisper>=1.1", "av>=14,<19", "sounddevice>=0.4", "openwakeword>=0.6"]
 dev = ["pytest", "httpx"]
 
 [project.scripts]

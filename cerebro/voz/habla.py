@@ -104,15 +104,19 @@ def listar_voces_espanol() -> list[tuple[str, str]]:
 
 
 _CALIDAD = ("premium", "mejorada", "enhanced")
+# Voces masculinas de macOS en español: Jarvis suena a mayordomo, no a locutora.
+_MASCULINAS = ("jorge", "diego", "juan", "carlos", "eddy", "reed", "rocko", "grandpa")
 
 
 def elegir_voz(preferida: str, voces: list[tuple[str, str]]) -> str:
-    """La voz pedida (en su versión de mayor calidad si está), o la mejor en español de España."""
+    """La voz pedida (en su mejor calidad si está); si falta, la mejor voz masculina en español."""
     def puntuar(voz: tuple[str, str]) -> tuple:
         nombre, idioma = voz
+        bajo = nombre.lower()
         return (
-            preferida.lower() in nombre.lower(),
-            any(c in nombre.lower() for c in _CALIDAD),
+            preferida.lower() in bajo,
+            any(m in bajo for m in _MASCULINAS),
+            any(c in bajo for c in _CALIDAD),
             idioma == "es_ES",
         )
 
@@ -121,5 +125,6 @@ def elegir_voz(preferida: str, voces: list[tuple[str, str]]) -> str:
         return preferida
     mejor = max(voces, key=puntuar)
     if preferida.lower() not in mejor[0].lower():
-        print(f"[aviso] La voz '{preferida}' no está instalada; uso '{mejor[0]}'.")
+        print(f"[aviso] La voz '{preferida}' no está instalada; uso '{mejor[0]}'. Para la voz de Jarvis, "
+              "descarga 'Jorge (Mejorada)' en Ajustes > Accesibilidad > Contenido leído > Gestionar voces.")
     return mejor[0]
