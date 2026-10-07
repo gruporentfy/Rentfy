@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<meta name="theme-color" content="#05090f">
+<title>Jarvis</title>
+<style>
+  :root {
+    --fondo: #05090f; --panel: #0b1520; --borde: #16324a;
+    --cian: #4fd8ff; --cian-suave: #4fd8ff33; --texto: #d7ecf7; --tenue: #7b97ab; --error: #ff7a7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100dvh; background: radial-gradient(circle at 50% 20%, #0c2133, var(--fondo) 60%);
+    color: var(--texto); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+  }
+  header { text-align: center; margin-top: 24px; }
+  h1 { letter-spacing: .5em; font-weight: 300; margin: 0; color: var(--cian); font-size: 22px; padding-left: .5em; }
+  #estado { color: var(--tenue); font-size: 13px; letter-spacing: .15em; text-transform: uppercase; min-height: 20px; }
+
+  /* Reactor: también es el botón para hablar */
+  #reactor {
+    width: 170px; height: 170px; margin: 28px auto 20px; border-radius: 50%; border: 0; cursor: pointer;
+    background: radial-gradient(circle, #e9fbff 0 10%, var(--cian) 18%, #0d3b52 45%, #061520 70%);
+    box-shadow: 0 0 30px var(--cian-suave), inset 0 0 25px #000; position: relative;
+    touch-action: none; -webkit-user-select: none; user-select: none; transition: transform .15s;
+  }
+  #reactor::before, #reactor::after {
+    content: ""; position: absolute; inset: -10px; border-radius: 50%;
+    border: 2px dashed var(--cian-suave); animation: girar 18s linear infinite;
+  }
+  #reactor::after { inset: -22px; border-style: dotted; animation-duration: 30s; animation-direction: reverse; }
+  body[data-modo="escuchando"] #reactor { transform: scale(1.06); box-shadow: 0 0 70px var(--cian); }
+  body[data-modo="pensando"] #reactor::before { animation-duration: 1.2s; border-color: var(--cian); }
+  body[data-modo="hablando"] #reactor { animation: latir .9s ease-in-out infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @keyframes latir { 50% { box-shadow: 0 0 80px var(--cian); } }
+
+  #pista { color: var(--tenue); font-size: 13px; text-align: center; }
+  main { width: 100%; max-width: 680px; flex: 1; display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .msg { padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--borde); white-space: pre-wrap; }
+  .tu { align-self: flex-end; background: #10283a; max-width: 85%; }
+  .jarvis { align-self: flex-start; max-width: 95%; }
+  .error { color: var(--error); }
+  details { margin-top: 8px; color: var(--tenue); }
+  details[open] { color: var(--texto); }
+  summary { cursor: pointer; color: var(--cian); }
+  form { width: 100%; max-width: 680px; display: flex; gap: 8px; margin: 14px 0 18px; }
+  input {
+    flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--borde);
+    background: var(--panel); color: var(--texto); font-size: 16px; min-width: 0;
+  }
+  button.enviar { padding: 0 18px; border-radius: 12px; border: 1px solid var(--cian); background: transparent; color: var(--cian); font-size: 16px; }
+</style>
+</head>
+<body data-modo="espera">
+  <header>
+    <h1>JARVIS</h1>
+    <div id="estado">En línea</div>
+  </header>
+
+  <button id="reactor" aria-label="Mantén pulsado para hablar"></button>
+  <div id="pista">Mantén pulsado el reactor (o la barra espaciadora) para hablar</div>
+
+  <main id="chat"></main>
+
+  <form id="formulario">
+    <input id="texto" placeholder="O escribe aquí..." autocomplete="off">
+    <button class="enviar">Enviar</button>
+  </form>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const chat = $("#chat");
+let capacidades = { voz: false, oido: false };
+let grabadora = null, trozos = [], audioActual = null;
+
+function modo(m, texto) {
+  document.body.dataset.modo = m;
+  $("#estado").textContent = texto ?? { espera: "En línea", escuchando: "Escuchando…", pensando: "Procesando…", hablando: "Hablando" }[m];
+}
+
+function añadir(clase, texto, detalle) {
+  const div = document.createElement("div");
+  div.className = "msg " + clase;
+  div.textContent = texto;
+  if (detalle) {
+    const d = document.createElement("details");
+    d.innerHTML = "<summary>Ver detalle</summary>";
+    const p = document.createElement("div");
+    p.textContent = detalle;
+    d.appendChild(p);
+    div.appendChild(d);
+  }
+  chat.appendChild(div);
+  div.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+async function hablar(texto) {
+  if (!texto) return modo("espera");
+  modo("hablando");
+  try {
+    if (capacidades.voz) {
+      const r = await fetch("/api/voz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) });
+      if (!r.ok) throw new Error();
+      audioActual = new Audio(URL.createObjectURL(await r.blob()));
+      audioActual.onended = () => modo("espera");
+      await audioActual.play();
+      return;
+    }
+  } catch (_) { /* si falla, usamos la voz del navegador */ }
+  const u = new SpeechSynthesisUtterance(texto);
+  u.lang = "es-ES";
+  u.onend = () => modo("espera");
+  speechSynthesis.speak(u);
+}
+
+async function procesar(promesa) {
+  modo("pensando");
+  try {
+    const r = await promesa;
+    const datos = await r.json();
+    if (!r.ok) throw new Error(datos.detail || "Error del servidor");
+    if (!datos.tu) { modo("espera", "No le he oído, señor"); return; }
+    añadir("tu", datos.tu);
+    añadir("jarvis", datos.respuesta, datos.detalle);
+    hablar(datos.respuesta);
+  } catch (e) {
+    añadir("jarvis error", "Error: " + e.message);
+    modo("espera");
+  }
+}
+
+$("#formulario").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const texto = $("#texto").value.trim();
+  if (!texto) return;
+  $("#texto").value = "";
+  procesar(fetch("/api/mensaje", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) }));
+});
+
+async function empezarGrabacion() {
+  if (grabadora) return;
+  if (audioActual) audioActual.pause();
+  speechSynthesis.cancel();
+  if (!capacidades.oido) { modo("espera", "El oído no está instalado: escribe abajo"); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    grabadora = new MediaRecorder(stream);
+    trozos = [];
+    grabadora.ondataavailable = (e) => trozos.push(e.data);
+    grabadora.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(trozos, { type: grabadora.mimeType });
+      grabadora = null;
+      const datos = new FormData();
+      datos.append("archivo", blob, "voz");
+      procesar(fetch("/api/audio", { method: "POST", body: datos }));
+    };
+    grabadora.start();
+    modo("escuchando");
+  } catch (e) {
+    modo("espera", "Sin permiso para usar el micrófono");
+  }
+}
+function pararGrabacion() { if (grabadora && grabadora.state === "recording") grabadora.stop(); }
+
+const reactor = $("#reactor");
+reactor.addEventListener("pointerdown", (e) => { e.preventDefault(); empezarGrabacion(); });
+["pointerup", "pointerleave", "pointercancel"].forEach((ev) => reactor.addEventListener(ev, pararGrabacion));
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); empezarGrabacion(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT") pararGrabacion(); });
+
+fetch("/api/estado").then((r) => r.json()).then((e) => { capacidades = e; }).catch(() => modo("espera", "Sin conexión con Jarvis"));
+</script>
+</body>
+</html>

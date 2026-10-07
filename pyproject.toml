@@ -1,19 +1,30 @@
 [project]
 name = "cerebro"
 version = "0.1.0"
-description = "Cerebro: un sistema de agentes con memoria propia que gestiona tu día a día, negocios, entrenamientos y estudios."
+description = "Jarvis: un asistente por voz con un sistema de agentes con memoria propia que gestiona tu día a día, negocios, entrenamientos y estudios."
 requires-python = ">=3.10"
-dependencies = ["anthropic>=1.11"]
+dependencies = [
+    "anthropic>=1.11",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26",
+]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# Oído (Whisper), micrófono y palabra de activación. Todo local y gratis.
+voz = ["faster-whisper>=1.1", "sounddevice>=0.4", "openwakeword>=0.6"]
+dev = ["pytest", "httpx"]
 
 [project.scripts]
-cerebro = "cerebro.cli:main"
+jarvis = "cerebro.jarvis:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["cerebro"]
+packages = ["cerebro", "cerebro.voz"]
+
+[tool.setuptools.package-data]
+cerebro = ["web/*.html"]

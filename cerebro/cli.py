@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import anthropic
 
-from .cerebro import Cerebro
+from .cerebro import Cerebro, separar_detalle
 
 AYUDA = """
 Comandos:
@@ -17,7 +17,7 @@ Comandos:
   /nueva                           Empieza una conversación nueva (la memoria se mantiene)
   /ayuda                           Muestra esta ayuda
   /salir                           Termina
-Cualquier otro texto se envía a Cerebro.
+Cualquier otro texto se envía a Jarvis.
 """
 
 
@@ -64,7 +64,7 @@ def _comando(cerebro: Cerebro, linea: str) -> bool:
 def main() -> None:
     cerebro = Cerebro()
     cerebro.al_delegar = lambda nombre, orden: print(f"  -> Cerebro ordena a {nombre}: {orden[:100]}...")
-    print("Cerebro listo. Escribe /ayuda para ver los comandos.\n")
+    print("Jarvis listo (modo texto). Escribe /ayuda para ver los comandos.\n")
     while True:
         try:
             linea = input("tú> ").strip()
@@ -78,7 +78,8 @@ def main() -> None:
                 break
             continue
         try:
-            print(f"\ncerebro> {cerebro.pensar(linea)}\n")
+            hablado, detalle = separar_detalle(cerebro.pensar(linea))
+            print(f"\njarvis> {hablado}\n" + (f"\n{detalle}\n" if detalle else ""))
         except anthropic.AuthenticationError:
             print("Error de autenticación: configura ANTHROPIC_API_KEY.")
         except anthropic.RateLimitError:

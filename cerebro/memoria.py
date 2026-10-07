@@ -46,7 +46,8 @@ class Memoria:
         carpeta = Path(directorio_datos) / agente
         carpeta.mkdir(parents=True, exist_ok=True)
         self.ruta = carpeta / "memoria.db"
-        self._db = sqlite3.connect(self.ruta)
+        # El servidor atiende peticiones desde varios hilos; cada agente se usa de uno en uno.
+        self._db = sqlite3.connect(self.ruta, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(ESQUEMA)
         self._db.commit()

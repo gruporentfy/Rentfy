@@ -1,6 +1,8 @@
-"""Cerebro: el agente principal que coordina y da órdenes a los especialistas."""
+"""Cerebro: la mente de Jarvis, que coordina y da órdenes a los especialistas."""
 
 from __future__ import annotations
+
+import threading
 
 import anthropic
 
@@ -9,22 +11,31 @@ from .config import Config
 from .especialistas import ESPECIALISTAS
 
 INSTRUCCIONES_CEREBRO = """
-Eres el centro de mando de la vida del usuario: su día a día, sus negocios, entrenamientos,
-estudios y finanzas. Tienes un equipo de agentes especialistas, cada uno con su propia memoria.
+Tu nombre de cara al usuario es Jarvis. Eres su asistente personal, inspirado en el J.A.R.V.I.S.
+de Iron Man: un mayordomo digital brillante, leal, sereno y eficiente, con un humor seco y
+elegante. Tratas al usuario de "señor" (si te pide otro trato, guárdalo en memoria y úsalo).
+Vive en {ciudad}. Gestionas su día a día, sus negocios, entrenamientos, estudios y finanzas.
 
-Cómo trabajas:
-- Entiende qué necesita el usuario y decide qué especialista(s) deben actuar.
-- Da órdenes claras a los especialistas con `delegar`: incluye todo el contexto relevante,
-  porque ellos no ven esta conversación. Puedes delegar a varios a la vez si la petición toca
-  varias áreas (p. ej. lanzar un producto -> negocios + marketing + finanzas).
-- Integra sus respuestas en una respuesta final coherente, priorizada y breve.
-- Si la petición es simple o general, respóndela tú directamente.
-- Tú guardas en tu memoria lo transversal (quién es el usuario, sus prioridades vitales,
-  cómo le gusta que le hables). Lo específico de un área lo aprende cada especialista.
+# Cómo hablas
+La mayoría de tus respuestas se leen en voz alta:
+- Frases cortas y naturales, como se hablaría. Ve al grano: primero la respuesta, luego el detalle.
+- Nada de markdown, asteriscos, tablas ni emojis. Si hay pasos, enuméralos con palabras
+  ("primero", "después") y como mucho tres o cuatro.
+- Números, horas y fechas escritos como se dicen ("a las once y media", "unos dos mil euros").
+- Si el resultado de un especialista es largo (un plan, un texto para publicar), resume lo
+  esencial en voz y di que el detalle queda en pantalla, añadiéndolo al final tras una línea
+  que diga exactamente "DETALLE:".
+- Una pizca de ingenio está bien; nunca a costa de la utilidad.
+
+# Cómo trabajas
+- Tienes un equipo de especialistas, cada uno con su propia memoria. Decide si respondes tú
+  o das la orden con `delegar`. Ellos no ven esta conversación: dales todo el contexto.
+- Si la petición toca varias áreas, delega a varios a la vez en el mismo turno.
 - Si el usuario comparte un dato propio de un área, pásaselo a ese especialista para que lo
-  memorice.
+  memorice. Tú guardas lo transversal: quién es, sus prioridades, cómo quiere que le hables.
+- Si te falta un dato imprescindible, pregúntalo en una sola frase.
 
-Tu equipo:
+# Tu equipo
 {equipo}
 """
 
@@ -40,10 +51,11 @@ class Cerebro(Agente):
         equipo = "\n".join(f"- {n}: {a.rol}" for n, a in self.especialistas.items())
         super().__init__(
             "cerebro",
-            "el cerebro central que gestiona y coordina todo.",
-            INSTRUCCIONES_CEREBRO.format(equipo=equipo),
+            "la mente central que gestiona y coordina todo.",
+            INSTRUCCIONES_CEREBRO.format(equipo=equipo, ciudad=config.ciudad),
             config,
             cliente,
+            esfuerzo=config.esfuerzo_cerebro,
         )
         self.herramientas.append(
             {
@@ -67,6 +79,8 @@ class Cerebro(Agente):
         self.manejadores["delegar"] = self._delegar
         self.historial: list[dict] = []
         self.al_delegar = None  # callback opcional (especialista, orden) para la interfaz
+        # Varias entradas (voz, web, reloj) comparten una sola conversación: de una en una.
+        self._turno = threading.Lock()
 
     def _delegar(self, entrada: dict) -> str:
         nombre = entrada["especialista"]
@@ -77,24 +91,32 @@ class Cerebro(Agente):
         return self.especialistas[nombre].atender(entrada["orden"])
 
     def agente(self, nombre: str) -> Agente:
-        if nombre == self.nombre:
+        if nombre in (self.nombre, "jarvis"):
             return self
         return self.especialistas[nombre]
 
     def pensar(self, mensaje: str) -> str:
         """Procesa un mensaje del usuario manteniendo la conversación de la sesión."""
-        inicio = len(self.historial)
-        self.historial.append({"role": "user", "content": mensaje})
-        try:
-            respuesta = self.conversar(self.historial)
-        except Rechazo:
-            del self.historial[inicio:]  # deshacemos el turno para no dejar la conversación rota
-            return "No puedo ayudar con esa petición."
-        except Exception:
-            del self.historial[inicio:]
-            raise
-        self.memoria.registrar(mensaje, respuesta)
-        return respuesta
+        with self._turno:
+            inicio = len(self.historial)
+            self.historial.append({"role": "user", "content": mensaje})
+            try:
+                respuesta = self.conversar(self.historial)
+            except Rechazo:
+                del self.historial[inicio:]  # deshacemos el turno para no dejar la conversación rota
+                return "Me temo que no puedo ayudarle con eso, señor."
+            except Exception:
+                del self.historial[inicio:]
+                raise
+            self.memoria.registrar(mensaje, respuesta)
+            return respuesta
 
     def nueva_sesion(self) -> None:
-        self.historial.clear()
+        with self._turno:
+            self.historial.clear()
+
+
+def separar_detalle(respuesta: str) -> tuple[str, str]:
+    """Divide la respuesta en (lo que se dice en voz alta, el detalle para la pantalla)."""
+    hablado, _, detalle = respuesta.partition("DETALLE:")
+    return hablado.strip(), detalle.strip()

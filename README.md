@@ -1,110 +1,122 @@
-# Cerebro 🧠
+# Jarvis 🧠🎙️
 
-Un sistema de agentes de IA (con Claude) que te ayuda a gestionar tu día a día, tus negocios,
-entrenamientos, estudios y finanzas.
+Tu asistente personal por voz, al estilo del J.A.R.V.I.S. de Iron Man. Le hablas, te responde
+con su voz y gestiona tu día a día, tus negocios, entrenamientos, estudios y finanzas.
 
-**Cerebro** es el agente principal: entiende lo que necesitas y da órdenes a su equipo de
-especialistas. Cada agente tiene **su propio almacenamiento** donde aprende de ti y mejora
-con cada interacción.
+Por dentro, **Cerebro** es la mente de Jarvis: entiende lo que necesitas y da órdenes a un
+equipo de especialistas. Cada uno tiene **su propia memoria**, aprende de ti y mejora cada día.
 
 ```
-                 ┌──────────────┐
-      tú  ─────► │   CEREBRO    │  (memoria: quién eres, tus prioridades)
-                 └──────┬───────┘
-                        │ delegar(especialista, orden)
-   ┌────────┬───────────┼───────────┬──────────────┬──────────┐
-   ▼        ▼           ▼           ▼              ▼          ▼
- agenda  negocios  marketing    finanzas   entrenamiento  estudios
-   │        │           │           │              │          │
-  🗄️       🗄️          🗄️          🗄️             🗄️         🗄️   ← memoria propia de cada uno
+     🗣️ "Hey Jarvis..."           🖥️ Mac (siempre escuchando)   📱 iPhone   ⌚ Apple Watch (fase 2)
+                 │
+   ┌─────────────┴──────────────────────────────────────────────┐
+   │  👂 Oído: Whisper (local, gratis)                           │
+   │  🧠 CEREBRO ── delegar ──► agenda · negocios · marketing     │
+   │                           finanzas · entrenamiento · estudios│
+   │  🔊 Voz: voces de macOS + filtro "IA de película" (gratis)   │
+   │  🗄️ Una memoria propia por agente (datos/<agente>/)          │
+   └─────────────────────────────────────────────────────────────┘
 ```
+
+## Instalación en Mac
+
+```bash
+git clone https://github.com/gruporentfy/Rentfy.git jarvis
+cd jarvis
+bash instalar_mac.sh     # instala todo, descarga los modelos y te pide la clave de Claude
+./jarvis.sh              # arranca Jarvis
+```
+
+La primera vez macOS pedirá permiso para usar el micrófono: acéptalo.
+
+Necesitas una clave de la API de Claude (https://platform.claude.com). Es lo único de pago,
+según el uso. El oído, la voz y la palabra de activación funcionan en tu Mac, gratis y sin
+internet.
+
+**Voz más natural (gratis):** Ajustes del Sistema → Accesibilidad → Contenido leído → Voz del
+sistema → Gestionar voces → Español (España) → descarga **Jorge (Mejorada)**. Jarvis la usará
+automáticamente.
+
+## Cómo se usa
+
+- **Manos libres:** di **"Hey Jarvis"**, espera el pitido y habla. Cuando te responda, tienes
+  unos segundos para seguir hablando sin repetir su nombre.
+- **App web** (se abre sola en `http://localhost:8765`): mantén pulsado el reactor o la barra
+  espaciadora para hablar, o escribe. Las respuestas largas (planes, textos) aparecen en
+  "Ver detalle".
+- **Modo texto en la terminal:** `./jarvis.sh texto`. Incluye comandos para ver y editar la
+  memoria de cada agente (`/memoria marketing`, `/ensenar`, `/feedback`, `/olvidar`...).
+
+Opciones: `./jarvis.sh --sin-escucha` (sin micrófono siempre activo), `--sin-navegador`.
 
 ## Cómo aprende cada agente
 
-Cada agente guarda en `datos/<agente>/memoria.db` (SQLite):
+Cada agente guarda en `datos/<agente>/memoria.db`:
 
-| Tabla          | Qué guarda                                                        |
-| -------------- | ----------------------------------------------------------------- |
-| `aprendizajes` | Preferencias, objetivos, hábitos y datos que aprendió de ti       |
-| `historial`    | Las tareas que recibió y lo que respondió                         |
-| `feedback`     | Tus valoraciones (1-5) para que ajuste su forma de trabajar       |
+| Tabla          | Qué guarda                                                  |
+| -------------- | ----------------------------------------------------------- |
+| `aprendizajes` | Preferencias, objetivos, hábitos y datos que aprendió de ti |
+| `historial`    | Las tareas que recibió y lo que respondió                   |
+| `feedback`     | Tus valoraciones (1-5) para ajustar su forma de trabajar    |
 
-En cada petición, el agente recibe un resumen de su memoria. Además tiene herramientas para
-`guardar_aprendizaje`, `buscar_memoria` y `olvidar`, así que decide solo qué merece recordar.
-La carpeta `datos/` está en `.gitignore`: tus memorias personales no se suben al repositorio.
-
-## Instalación
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-export ANTHROPIC_API_KEY="tu-clave"   # https://platform.claude.com
-```
-
-## Uso
-
-```bash
-python -m cerebro
-```
-
-```
-tú> Quiero lanzar una promo de verano para Rentfy, ¿qué hago esta semana?
-  -> Cerebro ordena a marketing: ...
-  -> Cerebro ordena a finanzas: ...
-  -> Cerebro ordena a agenda: ...
-cerebro> Plan integrado...
-```
-
-Comandos:
-
-| Comando                              | Para qué sirve                                         |
-| ------------------------------------ | ------------------------------------------------------ |
-| `/agentes`                           | Lista los agentes y cuánto saben                       |
-| `/memoria <agente>`                  | Muestra lo que un agente sabe de ti                    |
-| `/ensenar <agente> <texto>`          | Le enseñas algo directamente                           |
-| `/olvidar <agente> <id>`             | Borra un recuerdo                                      |
-| `/feedback <agente> <1-5> [texto]`   | Valoras su trabajo para que mejore                     |
-| `/directo <agente> <mensaje>`        | Hablas con un especialista sin pasar por Cerebro       |
-| `/nueva`                             | Nueva conversación (la memoria se mantiene)            |
+En cada petición el agente lee su memoria, y decide solo qué guardar, buscar u olvidar.
+`datos/` no se sube a GitHub: tus memorias se quedan en tu Mac.
 
 ## Configuración
 
-Variables de entorno opcionales:
+Variables de entorno (puedes añadirlas a `.env` con `export NOMBRE=valor`):
 
-| Variable           | Por defecto        | Descripción                                   |
-| ------------------ | ------------------ | --------------------------------------------- |
-| `CEREBRO_MODELO`   | `claude-opus-5-5`  | Modelo de Claude                              |
-| `CEREBRO_ESFUERZO` | `medium`           | `low`, `medium`, `high`, `xhigh` o `max`      |
-| `CEREBRO_DATOS`    | `datos`            | Carpeta donde viven las memorias              |
+| Variable                   | Por defecto       | Para qué                                               |
+| -------------------------- | ----------------- | ------------------------------------------------------ |
+| `JARVIS_VOZ`               | `Jorge`           | Voz de macOS (`say -v '?'` para verlas)                |
+| `JARVIS_VELOCIDAD`         | `180`             | Palabras por minuto                                    |
+| `JARVIS_EFECTO`            | `0.6`             | Filtro "IA" de 0 (voz natural) a 1 (muy robótica)      |
+| `JARVIS_ACTIVACION`        | `hey_jarvis`      | Palabra de activación, o ruta a un modelo `.onnx` propio |
+| `JARVIS_UMBRAL`            | `0.5`             | Sensibilidad de activación (más bajo = más sensible)   |
+| `JARVIS_WHISPER`           | `small`           | Modelo del oído: `base` (rápido) … `medium` (preciso)  |
+| `JARVIS_CIUDAD`            | `Bilbao`          |                                                        |
+| `JARVIS_ZONA_HORARIA`      | `Europe/Madrid`   |                                                        |
+| `CEREBRO_MODELO`           | `claude-opus-5-5` | Modelo de Claude                                       |
+| `CEREBRO_ESFUERZO_CEREBRO` | `low`             | Cuánto piensa Jarvis antes de contestar (rapidez)      |
+| `CEREBRO_ESFUERZO`         | `medium`          | Cuánto piensan los especialistas                       |
 
-## Añadir un nuevo especialista
+## Añadir un especialista
 
-Agrega una entrada en `cerebro/especialistas.py`:
+Añade una entrada en `cerebro/especialistas.py`; Cerebro lo detecta, le crea su memoria y ya
+puede darle órdenes.
 
-```python
-"viajes": {
-    "rol": "organizador de viajes del usuario.",
-    "instrucciones": "Planificas viajes, presupuestos y reservas. Aprende sus preferencias...",
-},
-```
+## Hoja de ruta
 
-Cerebro lo detecta automáticamente, le crea su memoria y podrá darle órdenes.
+| Fase | Contenido                                                                 | Estado     |
+| ---- | ------------------------------------------------------------------------- | ---------- |
+| 1    | Jarvis en el Mac: "Hey Jarvis", oído, voz con filtro, app web              | ✅ Hecha    |
+| 2    | iPhone y Apple Watch ("Oye Siri, Jarvis") desde cualquier sitio            | Pendiente  |
+| 3    | Rutinas: resumen 7:30, repaso 21:30, revisión semanal (editables)         | Pendiente  |
+| 4    | Memoria mejorada, registros (entrenos, gastos, estudio), recordatorios, panel | Pendiente |
+| 5    | Google Calendar, Gmail, internet, especialistas nuevos por voz            | Pendiente  |
+| —    | Palabra de activación "Oye, Jarvis" (modelo propio)                        | Pendiente  |
+| —    | Voz clonada (solo de alguien que dé su permiso)                           | Opcional   |
 
 ## Estructura
 
 ```
 cerebro/
-  cerebro.py         Agente principal (coordina y delega)
+  cerebro.py         Cerebro / Jarvis: personalidad, coordina y delega
   agente.py          Agente base: bucle con Claude + herramientas de memoria
   memoria.py         Almacenamiento SQLite por agente
-  especialistas.py   Definición del equipo
-  config.py          Configuración
-  cli.py             Interfaz de terminal
-tests/               Pruebas (sin llamadas reales a la API)
+  especialistas.py   El equipo
+  servidor.py        API y app web
+  web/index.html     La app (reactor para hablar)
+  voz/oido.py        Voz -> texto (Whisper)
+  voz/habla.py       Texto -> voz (macOS) 
+  voz/filtro.py      Filtro "IA de película"
+  voz/activacion.py  "Hey Jarvis" y escucha continua
+  jarvis.py          Arranque
+tests/               Pruebas (sin micrófono ni llamadas reales a la API)
 ```
 
 ## Pruebas
 
 ```bash
-pytest
+pip install -e ".[dev]" && pytest
 ```

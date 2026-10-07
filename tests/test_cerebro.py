@@ -92,7 +92,7 @@ def test_especialista_inexistente_devuelve_error_al_modelo(config):
 def test_rechazo_no_rompe_el_historial(config):
     cliente = ClienteFalso([resp("refusal")])
     cerebro = Cerebro(config, cliente)
-    assert "No puedo" in cerebro.pensar("algo")
+    assert "no puedo" in cerebro.pensar("algo")
     assert cerebro.historial == []
 
 

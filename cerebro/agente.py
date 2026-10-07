@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 import anthropic
 
@@ -12,6 +14,8 @@ from .config import Config
 from .memoria import Memoria
 
 Manejador = Callable[[dict], str]
+
+DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 
 class Rechazo(Exception):
@@ -85,12 +89,14 @@ class Agente:
         instrucciones: str,
         config: Config,
         cliente: anthropic.Anthropic | None = None,
+        esfuerzo: str | None = None,
     ):
         self.nombre = nombre
         self.rol = rol
         self.instrucciones = instrucciones
         self.config = config
         self.cliente = cliente or anthropic.Anthropic()
+        self.esfuerzo = esfuerzo or config.esfuerzo
         self.memoria = Memoria(nombre, config.directorio_datos)
         self.herramientas: list[dict] = list(HERRAMIENTAS_MEMORIA)
         self.manejadores: dict[str, Manejador] = {
@@ -120,9 +126,10 @@ class Agente:
 
     def _system(self) -> list[dict]:
         # Bloque estable primero (se cachea); la memoria cambia, va después.
+        ahora = datetime.now(ZoneInfo(self.config.zona_horaria))
         estable = f"Eres {self.nombre}: {self.rol}\n\n{self.instrucciones}\n{INSTRUCCIONES_MEMORIA}"
         dinamico = (
-            f"Fecha y hora actual: {datetime.now():%A %d/%m/%Y %H:%M}\n\n"
+            f"Fecha y hora actual: {DIAS[ahora.weekday()]} {ahora:%d/%m/%Y %H:%M} ({self.config.ciudad})\n\n"
             f"# Contenido de tu memoria\n{self.memoria.contexto()}"
         )
         return [
@@ -151,7 +158,7 @@ class Agente:
                 tools=self.herramientas,
                 messages=mensajes,
                 thinking={"type": "adaptive"},
-                output_config={"effort": self.config.esfuerzo},
+                output_config={"effort": self.esfuerzo},
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
             )
@@ -167,20 +174,21 @@ class Agente:
                     texto += "\n\n[Respuesta cortada por longitud]"
                 return texto
 
-            resultados = []
-            for bloque in respuesta.content:
-                if bloque.type != "tool_use":
-                    continue
+            # Las herramientas pedidas en el mismo turno se ejecutan en paralelo
+            # (p. ej. Cerebro dando órdenes a marketing y finanzas a la vez).
+            llamadas = [b for b in respuesta.content if b.type == "tool_use"]
+
+            def ejecutar(bloque):
                 entrada = bloque.input if isinstance(bloque.input, dict) else json.loads(bloque.input)
-                contenido, es_error = self._ejecutar_herramienta(bloque.name, entrada)
-                resultados.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": bloque.id,
-                        "content": contenido,
-                        "is_error": es_error,
-                    }
-                )
+                return self._ejecutar_herramienta(bloque.name, entrada)
+
+            with ThreadPoolExecutor(max_workers=max(1, len(llamadas))) as pool:
+                salidas = list(pool.map(ejecutar, llamadas))
+
+            resultados = [
+                {"type": "tool_result", "tool_use_id": b.id, "content": contenido, "is_error": es_error}
+                for b, (contenido, es_error) in zip(llamadas, salidas)
+            ]
             mensajes.append({"role": "user", "content": resultados})
 
     def atender(self, tarea: str) -> str:

@@ -1,0 +1,46 @@
+#!/bin/bash
+# Instala Jarvis en un Mac (Apple Silicon). Ejecuta:  bash instalar_mac.sh
+set -e
+cd "$(dirname "$0")"
+
+echo "== Instalando Jarvis =="
+
+PY=""
+for c in python3.13 python3.12 python3.11 python3.10 python3; do
+  if command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    PY="$c"; break
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "Necesitas Python 3.10 o superior. Instálalo con:"
+  echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  echo "  brew install python@3.12"
+  exit 1
+fi
+echo "Usando $($PY --version)"
+
+$PY -m venv .venv
+source .venv/bin/activate
+pip install -q --upgrade pip
+pip install -q -e ".[voz]"
+
+echo "== Descargando modelos (oído y palabra de activación) =="
+python -c "import openwakeword; openwakeword.utils.download_models(['hey_jarvis_v0.1'])"
+python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+
+if [ ! -f .env ]; then
+  echo
+  echo "Pega tu clave de Claude (https://platform.claude.com > API Keys) y pulsa Enter:"
+  read -rs CLAVE
+  printf 'export ANTHROPIC_API_KEY="%s"\n' "$CLAVE" > .env
+  chmod 600 .env
+fi
+
+echo
+echo "== Voces en español instaladas =="
+say -v '?' | grep ' es_' || true
+echo
+echo "Consejo: para una voz más natural, descarga 'Jorge (Mejorada)' en"
+echo "Ajustes del Sistema > Accesibilidad > Contenido leído > Voz del sistema > Gestionar voces."
+echo
+echo "Listo. Arranca Jarvis con:  ./jarvis.sh"
