@@ -11,15 +11,21 @@ for c in python3.13 python3.12 python3.11 python3.10 python3; do
     PY="$c"; break
   fi
 done
-if [ -z "$PY" ]; then
-  echo "Necesitas Python 3.10 o superior. Instálalo con:"
-  echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-  echo "  brew install python@3.12"
-  exit 1
+rm -rf .venv
+if [ -n "$PY" ]; then
+  echo "Usando $($PY --version)"
+  $PY -m venv .venv
+else
+  # El Python del Mac es antiguo: descargamos uno moderno solo para Jarvis con "uv"
+  # (no necesita contraseña de administrador ni toca el resto del sistema).
+  echo "Tu Python es antiguo; descargando Python 3.12 solo para Jarvis..."
+  UV="$HOME/.local/bin/uv"
+  if ! command -v uv >/dev/null && [ ! -x "$UV" ]; then
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
+  fi
+  command -v uv >/dev/null && UV="$(command -v uv)"
+  "$UV" venv --seed --python 3.12 .venv
 fi
-echo "Usando $($PY --version)"
-
-$PY -m venv .venv
 source .venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -e ".[voz]"
