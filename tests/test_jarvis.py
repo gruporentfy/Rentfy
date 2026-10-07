@@ -114,3 +114,14 @@ def test_atender_habla_solo_la_parte_hablada(tmp_path):
     escucha = Escucha(Config(directorio_datos=tmp_path), cerebro, OidoFalso(), voz)
     assert escucha.atender(np.ones(10, dtype=np.float32)) is True
     assert voz.dicho == ["Hecho, señor."]
+
+
+def test_error_inesperado_devuelve_json(tmp_path):
+    class OidoRoto:
+        def transcribir(self, audio):
+            raise RuntimeError("modelo no descargado")
+
+    cliente = TestClient(crear_app(_cerebro(tmp_path), OidoRoto()), raise_server_exceptions=False)
+    r = cliente.post("/api/audio", files={"archivo": ("v", b"x")})
+    assert r.status_code == 500
+    assert r.json()["detail"] == "Error interno (RuntimeError): modelo no descargado"

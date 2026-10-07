@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import importlib.util
 import threading
 import webbrowser
@@ -51,6 +52,8 @@ def main() -> None:
 
     from .servidor import crear_app
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     config = Config()
     cerebro = Cerebro(config)
     voz, oido = _cargar_voz(config), _cargar_oido(config)

@@ -34,6 +34,12 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None, token: str = "") -> FastAPI
     Con ``token``, cada petición debe traerlo (cabecera Bearer, cookie o ?token=)."""
     app = FastAPI(title="Jarvis")
 
+    @app.exception_handler(Exception)
+    async def error_inesperado(request: Request, exc: Exception):
+        # Que el fallo se vea claro en la Terminal y en la app, en lugar de "Internal Server Error".
+        log.error("Error en %s", request.url.path, exc_info=exc)
+        return JSONResponse({"detail": f"Error interno ({type(exc).__name__}): {exc}"}, status_code=500)
+
     def token_valido(valor: str | None) -> bool:
         return bool(valor) and secrets.compare_digest(valor, token)
 

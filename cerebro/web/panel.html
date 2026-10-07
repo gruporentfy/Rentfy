@@ -74,7 +74,12 @@ const NOMBRES = { resumen_manana: "Resumen de la mañana", repaso_noche: "Repaso
 
 async function api(ruta, opciones) {
   const r = await fetch(ruta, opciones);
-  if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  if (!r.ok) {
+    const crudo = await r.text();
+    let detalle = crudo;
+    try { detalle = JSON.parse(crudo).detail; } catch (_) {}
+    throw new Error(detalle || r.status);
+  }
   return r.json();
 }
 

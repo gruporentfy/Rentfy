@@ -134,7 +134,9 @@ async function procesar(promesa) {
   modo("pensando");
   try {
     const r = await promesa;
-    const datos = await r.json();
+    const crudo = await r.text();
+    let datos;
+    try { datos = JSON.parse(crudo); } catch (_) { throw new Error(crudo.slice(0, 200) || "Error " + r.status); }
     if (!r.ok) throw new Error(datos.detail || "Error del servidor");
     if (!datos.tu) { modo("espera", "No le he oído, señor"); return; }
     añadir("tu", datos.tu);
