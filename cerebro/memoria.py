@@ -10,7 +10,7 @@ Cada agente tiene su propia base SQLite en ``datos/<agente>/memoria.db`` con:
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ESQUEMA = """
@@ -25,6 +25,14 @@ CREATE TABLE IF NOT EXISTS historial (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tarea TEXT NOT NULL,
     respuesta TEXT NOT NULL,
+    fecha TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS registros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL,
+    valor REAL,
+    unidad TEXT NOT NULL DEFAULT '',
+    nota TEXT NOT NULL DEFAULT '',
     fecha TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS feedback (
@@ -100,6 +108,27 @@ class Memoria:
         ).fetchall()
         return list(reversed(filas))
 
+    # --- registros (datos con números: entrenos, gastos, ventas, estudio...) --
+
+    def registrar_dato(self, tipo: str, valor: float | None, unidad: str = "", nota: str = "",
+                       fecha: str | None = None) -> int:
+        cur = self._db.execute(
+            "INSERT INTO registros (tipo, valor, unidad, nota, fecha) VALUES (?, ?, ?, ?, ?)",
+            (tipo.strip().lower(), valor, unidad.strip(), nota.strip(), fecha or _ahora()),
+        )
+        self._db.commit()
+        return cur.lastrowid
+
+    def consultar_registros(self, tipo: str = "", dias: int = 30) -> list[sqlite3.Row]:
+        desde = (datetime.now() - timedelta(days=dias)).isoformat(timespec="seconds")
+        return self._db.execute(
+            "SELECT * FROM registros WHERE fecha >= ? AND tipo LIKE ? ORDER BY fecha",
+            (desde, f"%{tipo.strip().lower()}%"),
+        ).fetchall()
+
+    def tipos_registro(self) -> list[str]:
+        return [f[0] for f in self._db.execute("SELECT DISTINCT tipo FROM registros ORDER BY tipo")]
+
     # --- feedback -----------------------------------------------------------
 
     def registrar_feedback(self, valoracion: int, comentario: str = "") -> None:
@@ -128,6 +157,10 @@ class Memoria:
         if fb:
             partes.append("\n## Valoraciones recientes del usuario (1-5)")
             partes += [f"- {f['valoracion']}/5 {f['comentario']}".rstrip() for f in fb]
+        tipos = self.tipos_registro()
+        if tipos:
+            partes.append("\n## Registros que llevo (consúltalos con `consultar_registros`)")
+            partes.append(", ".join(tipos))
         hist = self.historial_reciente()
         if hist:
             partes.append("\n## Últimas tareas atendidas")
@@ -143,6 +176,7 @@ class Memoria:
             "aprendizajes": contar("aprendizajes"),
             "tareas": contar("historial"),
             "valoraciones": contar("feedback"),
+            "registros": contar("registros"),
             "valoracion_media": round(prom, 2) if prom else None,
         }
 

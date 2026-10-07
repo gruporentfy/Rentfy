@@ -34,13 +34,16 @@ echo "== Descargando modelos (oído y palabra de activación) =="
 python -c "import openwakeword; openwakeword.utils.download_models(['hey_jarvis_v0.1'])"
 python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 
-if [ ! -f .env ]; then
+touch .env && chmod 600 .env
+if ! grep -q ANTHROPIC_API_KEY .env; then
   echo
   echo "Pega tu clave de Claude (https://platform.claude.com > API Keys) y pulsa Enter:"
   read -rs CLAVE
-  printf 'export ANTHROPIC_API_KEY="%s"\n' "$CLAVE" > .env
-  chmod 600 .env
+  printf 'export ANTHROPIC_API_KEY="%s"\n' "$CLAVE" >> .env
 fi
+# Contraseña para entrar desde el iPhone y el reloj, y canal privado de notificaciones.
+grep -q JARVIS_TOKEN .env || printf 'export JARVIS_TOKEN="%s"\n' "$(python -c 'import secrets; print(secrets.token_urlsafe(24))')" >> .env
+grep -q JARVIS_NTFY= .env || printf 'export JARVIS_NTFY="jarvis-%s"\n' "$(python -c 'import secrets; print(secrets.token_hex(8))')" >> .env
 
 echo
 echo "== Voces en español instaladas =="

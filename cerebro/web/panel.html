@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05090f">
+<link rel="manifest" href="/manifest.webmanifest__TOKEN_QS__">
+<link rel="apple-touch-icon" href="/icono-180.png">
+<link rel="icon" href="/icono-180.png">
+<title>Panel de Jarvis</title>
+<style>
+  :root {
+    --fondo: #05090f; --panel: #0b1520; --borde: #16324a;
+    --cian: #4fd8ff; --texto: #d7ecf7; --tenue: #7b97ab; --error: #ff7a7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px 32px;
+  }
+  .contenedor { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
+  h1 { font-weight: 300; letter-spacing: .3em; color: var(--cian); margin: 0; font-size: 20px; }
+  header a { color: var(--tenue); text-decoration: none; }
+  h2 { font-size: 13px; letter-spacing: .15em; text-transform: uppercase; color: var(--tenue); font-weight: 600; margin: 28px 0 10px; }
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 14px; min-width: 0; }
+  .tarjeta h3 { margin: 0 0 2px; color: var(--cian); font-size: 16px; text-transform: capitalize; }
+  .rol { color: var(--tenue); font-size: 13px; margin-bottom: 10px; }
+  .cifras { display: flex; gap: 16px; margin-bottom: 10px; }
+  .cifra b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .cifra span { color: var(--tenue); font-size: 12px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 6px 0; border-top: 1px solid var(--borde); display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+  li:first-child { border-top: 0; }
+  li .texto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .tenue { color: var(--tenue); font-size: 12px; }
+  button.x { background: none; border: 0; color: var(--tenue); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; }
+  button.x:hover { color: var(--error); }
+  .rutina { display: flex; align-items: center; gap: 10px; }
+  .rutina .texto { flex: 1; }
+  input[type=time] { background: var(--fondo); color: var(--texto); border: 1px solid var(--borde); border-radius: 8px; padding: 4px 6px; font-size: 15px; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--cian); }
+  details summary { cursor: pointer; color: var(--tenue); font-size: 13px; margin-top: 8px; }
+  .vacio { color: var(--tenue); font-style: italic; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <header><h1>PANEL</h1><a href="/">← Jarvis</a></header>
+
+  <h2>Rutinas automáticas</h2>
+  <div class="tarjeta"><ul id="rutinas"></ul></div>
+
+  <h2>Recordatorios</h2>
+  <div class="tarjeta"><ul id="recordatorios"></ul></div>
+
+  <h2>Tu perfil</h2>
+  <div class="tarjeta"><ul id="perfil"></ul></div>
+
+  <h2>El equipo y lo que sabe de ti</h2>
+  <div class="rejilla" id="agentes"></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const el = (etiqueta, props = {}, ...hijos) => {
+  const e = Object.assign(document.createElement(etiqueta), props);
+  e.append(...hijos);
+  return e;
+};
+const NOMBRES = { resumen_manana: "Resumen de la mañana", repaso_noche: "Repaso de la noche", revision_semanal: "Revisión semanal", sueno: "Sueño (ordenar memoria)" };
+
+async function api(ruta, opciones) {
+  const r = await fetch(ruta, opciones);
+  if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  return r.json();
+}
+
+function vacio(ul, texto) { if (!ul.children.length) ul.append(el("li", { className: "vacio" }, texto)); }
+
+async function cargar() {
+  const d = await api("/api/panel");
+
+  const rutinas = $("#rutinas"); rutinas.innerHTML = "";
+  for (const [nombre, r] of Object.entries(d.rutinas)) {
+    const hora = el("input", { type: "time", value: r.hora });
+    const activa = el("input", { type: "checkbox", checked: r.activa !== false, title: "Activa" });
+    const guardar = (cambios) => api("/api/rutina", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nombre, ...cambios }) }).catch((e) => alert(e.message));
+    hora.addEventListener("change", () => guardar({ hora: hora.value }));
+    activa.addEventListener("change", () => guardar({ activa: activa.checked }));
+    rutinas.append(el("li", { className: "rutina" },
+      activa,
+      el("div", { className: "texto" }, NOMBRES[nombre] || nombre, el("div", { className: "tenue" }, `${r.dias} · ${r.descripcion}`)),
+      hora));
+  }
+
+  const rec = $("#recordatorios"); rec.innerHTML = "";
+  for (const r of d.recordatorios) {
+    const x = el("button", { className: "x", title: "Cancelar", textContent: "×" });
+    x.onclick = async () => { await api(`/api/recordatorio/${r.id}`, { method: "DELETE" }); cargar(); };
+    rec.append(el("li", {}, el("div", { className: "texto" }, r.texto, el("div", { className: "tenue" }, `${r.cuando.replace("T", " ")} · ${r.repetir === "no" ? "una vez" : r.repetir}`)), x));
+  }
+  vacio(rec, 'Ninguno. Prueba: "Jarvis, recuérdame llamar al gestor mañana a las diez".');
+
+  const perfil = $("#perfil"); perfil.innerHTML = "";
+  for (const [k, v] of Object.entries(d.perfil)) perfil.append(el("li", {}, el("div", { className: "texto" }, el("span", { className: "tenue" }, k.replace(/_/g, " ") + ": "), String(v))));
+  vacio(perfil, "Jarvis lo irá completando a medida que le cuentes cosas.");
+
+  const agentes = $("#agentes"); agentes.innerHTML = "";
+  for (const [nombre, a] of Object.entries(d.agentes)) {
+    const e = a.estadisticas;
+    const lista = el("ul");
+    for (const ap of a.aprendizajes) {
+      const x = el("button", { className: "x", title: "Olvidar", textContent: "×" });
+      x.onclick = async () => { await api(`/api/aprendizaje/${nombre}/${ap.id}`, { method: "DELETE" }); cargar(); };
+      lista.append(el("li", {}, el("div", { className: "texto" }, ap.contenido, el("div", { className: "tenue" }, `${ap.categoria} · importancia ${ap.importancia}`)), x));
+    }
+    vacio(lista, "Aún no ha aprendido nada.");
+    const tarjeta = el("div", { className: "tarjeta" },
+      el("h3", {}, nombre === "cerebro" ? "Jarvis (Cerebro)" : nombre),
+      el("div", { className: "rol" }, a.rol),
+      el("div", { className: "cifras" },
+        el("div", { className: "cifra" }, el("b", {}, e.aprendizajes), el("span", {}, "recuerdos")),
+        el("div", { className: "cifra" }, el("b", {}, e.tareas), el("span", {}, "tareas")),
+        el("div", { className: "cifra" }, el("b", {}, e.registros), el("span", {}, "registros")),
+        el("div", { className: "cifra" }, el("b", {}, e.valoracion_media ?? "–"), el("span", {}, "nota media"))),
+      lista);
+    if (a.registros.length) {
+      const regs = el("ul");
+      for (const r of a.registros.slice().reverse()) regs.append(el("li", {}, el("div", { className: "texto" }, `${r.tipo}: ${r.valor} ${r.unidad}`, el("div", { className: "tenue" }, r.fecha.slice(0, 16).replace("T", " ") + (r.nota ? " · " + r.nota : "")))));
+      tarjeta.append(el("details", {}, el("summary", {}, "Últimos registros"), regs));
+    }
+    agentes.append(tarjeta);
+  }
+}
+cargar().catch((e) => document.body.prepend(el("p", { style: "color:#ff7a7a" }, "Error: " + e.message)));
+</script>
+</body>
+</html>

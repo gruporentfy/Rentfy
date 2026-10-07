@@ -25,42 +25,52 @@ en español: respóndele en español, claro y sin jerga técnica.
 
 ```
 cerebro/
-  cerebro.py         Cerebro = Jarvis: personalidad (INSTRUCCIONES_CEREBRO), herramienta
-                     `delegar`, historial de la sesión con un lock (voz, web y reloj comparten
-                     una sola conversación). separar_detalle() divide en (hablado, "DETALLE:")
-  agente.py          Agente base: bucle manual de tool use con Claude, herramientas de memoria
-                     (guardar_aprendizaje, buscar_memoria, olvidar), las tool calls de un mismo
-                     turno se ejecutan en paralelo, y Rechazo para stop_reason == "refusal"
-  memoria.py         SQLite por agente en datos/<agente>/memoria.db: aprendizajes, historial
-                     y feedback. contexto() se inyecta en el system prompt
-  especialistas.py   ESPECIALISTAS = {nombre: {rol, instrucciones}}: agenda, negocios,
-                     marketing, finanzas, entrenamiento, estudios
-  config.py          Config (dataclass) leída de variables de entorno JARVIS_* y CEREBRO_*
-  servidor.py        FastAPI: GET /, GET /api/estado, POST /api/mensaje {texto},
-                     POST /api/audio (archivo), POST /api/voz {texto} -> WAV, POST /api/nueva
-  web/index.html     App web: el reactor se mantiene pulsado (o la barra espaciadora) para
-                     hablar; usa la voz del navegador si no hay voz local
-  voz/oido.py        faster-whisper (modelo "small", int8, CPU, idioma "es")
-  voz/habla.py       `say` de macOS + filtro, con elección automática de la mejor voz es_ES
-                     instalada; decir() prepara la frase siguiente mientras suena la actual
-  voz/filtro.py      Efecto "IA de película" en numpy (peine, paso alto y sala); no imita a nadie
-  voz/activacion.py  openWakeWord "hey_jarvis" + grabación por energía con ruido adaptativo
-                     + modo conversación de unos 5 s después de cada respuesta
-  jarvis.py          Arranque: uvicorn + hilo de escucha + saludo; modo `texto` -> cli.py
-instalar_mac.sh      Crea .venv (usa uv con Python 3.12 si el Python del sistema es menor
-                     que 3.10), instala ".[voz]", descarga los modelos y guarda la clave en .env
-jarvis.sh            Activa .venv, carga .env y ejecuta `python -m cerebro "$@"`
+  cerebro.py         Cerebro = Jarvis: personalidad (INSTRUCCIONES_CEREBRO) y herramientas propias
+                     (delegar, actualizar_perfil, crear/borrar_recordatorio, configurar_rutina,
+                     crear_especialista, ver_tiempo, ver_calendario). Una sola conversación
+                     compartida por voz, web, Siri y rutinas, protegida con un RLock.
+                     ejecutar_rutina(): "sueno" consolida memorias; el resto llama a pensar("[RUTINA x] ...").
+  agente.py          Agente base: bucle manual de tool use (con pause_turn), herramientas de memoria
+                     y registros, búsqueda web opcional, tool calls en paralelo, consolidar() con
+                     salida JSON estructurada
+  memoria.py         SQLite por agente en datos/<agente>/memoria.db: aprendizajes, historial,
+                     registros (datos con números) y feedback
+  compartido.py      Perfil (datos/perfil.json), Rutinas (datos/rutinas.json), Recordatorios
+                     (datos/recordatorios.db) y Avisos (en memoria, para la app)
+  especialistas.py   ESPECIALISTAS = {nombre: {rol, instrucciones, web?, calendario?}}; los creados
+                     por voz se guardan en datos/especialistas.json
+  externos.py        tiempo() con Open-Meteo y eventos_calendario() con un enlace iCal
+  programador.py     Hilo que cada 20 s dispara recordatorios vencidos y rutinas (ventana de 30 min)
+  notificaciones.py  Avisa por la app (Avisos), una notificación del Mac (osascript), ntfy y la voz
+  servidor.py        FastAPI con contraseña (Bearer, cookie o ?token=): /, /panel, /api/mensaje,
+                     /api/siri (texto plano), /api/audio, /api/voz, /api/avisos, /api/panel,
+                     /api/rutina, borrados; manifest e iconos públicos
+  web/               index.html (reactor, avisos y app instalable) y panel.html
+  voz/               oido.py (faster-whisper), habla.py (`say` + filtro, con lock), filtro.py,
+                     activacion.py (openWakeWord "hey_jarvis" + modo conversación)
+  jarvis.py          Arranque: programador + escucha + uvicorn
+instalar_mac.sh      .venv (uv con Python 3.12 si hace falta), modelos y .env (clave,
+                     JARVIS_TOKEN y JARVIS_NTFY generados)
+conectar_iphone.sh   `tailscale serve`, enlace privado, ntfy y pasos del atajo de Siri (iphone.txt)
+arranque_automatico.sh  LaunchAgent com.jarvis.asistente (log en datos/jarvis.log)
 ```
 
 ### Decisiones de la API de Claude (no las cambies sin motivo)
 
-- Modelo `claude-opus-5-5`, `thinking: {type: "adaptive"}` y `output_config.effort`: `low` para
-  Cerebro (rapidez en voz) y `medium` para los especialistas.
-- `client.beta.messages.create(..., betas=["server-side-fallback-2026-07-01"], fallbacks="default")`.
+- Modelo `claude-opus-5-5`, effort `low` para Cerebro (rapidez en voz) y `medium` para los
+  especialistas.
+- `client.beta.messages.create` con `betas=["server-side-fallback-2026-07-01",
+  "thinking-binding-controls-2026-08-01"]`, `fallbacks="default"` y
+  `thinking={"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}`.
+- **Pensamiento preservado:**
+  - El `system` y las `tools` de Cerebro se congelan al empezar cada sesión
+    (`_system_sesion` / `_tools_sesion`). Nunca los reconstruyas a mitad de sesión.
+  - La hora va dentro de cada mensaje del usuario (`marca_temporal()`).
+  - El historial solo crece; para "limpiar", empieza una sesión nueva. Pasa sola tras
+    `JARVIS_MINUTOS_SESION` sin hablar, o tras crear un especialista.
 - **No uses** `tool_choice` `any`/`tool` (en Opus 5.5 devuelve 400) ni `budget_tokens`, y no
   desactives el thinking.
-- El system prompt va en dos bloques: el estable con `cache_control` y la memoria detrás.
-- Añade siempre `response.content` completo al historial, no solo el texto.
+- Añade siempre `response.content` completo al historial.
 - Ante cualquier duda sobre la API, carga la skill `claude-api` antes de escribir código.
 
 ## Comandos
@@ -90,7 +100,12 @@ Toda funcionalidad nueva lleva su prueba con ese patrón.
 | La voz suena mal o en otro idioma | Descargar "Jorge (Mejorada)" en Accesibilidad → Contenido leído; `JARVIS_VOZ` |
 | Demasiado robótico o demasiado plano | `JARVIS_EFECTO` entre 0 y 1 |
 | Tarda en contestar | `JARVIS_WHISPER=base`; `CEREBRO_ESFUERZO_CEREBRO=low`; revisar si está delegando |
-| Puerto ocupado | `JARVIS_PUERTO=8766 ./jarvis.sh` |
+| Puerto ocupado | ¿Está el arranque automático activo? `bash arranque_automatico.sh quitar`, o `JARVIS_PUERTO=8766` |
+| El iPhone no conecta | Tailscale activo en ambos y misma cuenta; repetir `bash conectar_iphone.sh`; HTTPS activado en Tailscale |
+| 401 en el iPhone o en Siri | Volver a abrir el enlace con `?token=` de iphone.txt; cabecera `Authorization: Bearer <token>` en el atajo |
+| No llegan avisos al iPhone | App ntfy suscrita al tema de `JARVIS_NTFY` (.env) |
+| No suena la rutina | El Mac debe estar encendido a esa hora (ventana de 30 min); revisar el panel y datos/jarvis.log |
+| El calendario no sale | Comprobar `JARVIS_CALENDARIO` (enlace secreto iCal; los webcal:// se aceptan) |
 
 Para diagnosticar, ejecuta el comando que falla y lee la salida completa antes de cambiar código.
 
@@ -101,33 +116,20 @@ Para diagnosticar, ejecuta el comando que falla y lee la salida completa antes d
 2. No hace falta nada más: Cerebro lo añade al enum de `delegar` y `Memoria` crea su carpeta.
 3. Ejecuta las pruebas; el test de estado del servidor lista los agentes.
 
-## Hoja de ruta (estado en el README)
+## Hoja de ruta
 
-1. ✅ **Fase 1:** Jarvis en el Mac (voz, oído, "Hey Jarvis", app web).
-2. **Fase 2, iPhone y Apple Watch:**
-   - Acceso remoto gratis con **Tailscale** (`tailscale serve` para tener HTTPS, necesario para
-     el micrófono en Safari).
-   - **Token** obligatorio en la API en cuanto deje de escuchar solo en `127.0.0.1`.
-   - **Atajo de Siri "Jarvis":** Dictar texto → Obtener contenido de URL
-     (POST `/api/mensaje`) → Leer en voz alta `respuesta`. Funciona en el Watch.
-   - App web instalable en el iPhone (manifest + iconos).
-3. **Fase 3, rutinas:**
-   - Resumen a las 7:30 (tiempo de Bilbao con Open-Meteo, gratis y sin clave), repaso a las
-     21:30 y revisión los domingos.
-   - Horarios editables por voz; se guardan en la memoria de Cerebro o en un archivo de config.
-   - Avisos: voz en el Mac y notificación (web push o ntfy).
-4. **Fase 4, memoria mejorada:**
-   - Perfil compartido entre agentes.
-   - Registros con números: entrenos, gastos, ventas y horas de estudio.
-   - "Sueño" nocturno: cada agente consolida, deduplica y saca conclusiones del feedback.
-   - Recordatorios y panel de progreso.
-5. **Fase 5, integraciones:**
-   - Google Calendar y Gmail.
-   - Búsqueda web (`web_search_20260209`) para marketing y estudios.
-   - Crear especialistas nuevos por voz.
+Ya hechas las fases 1 a 5:
+1. Voz en el Mac.
+2. iPhone y Apple Watch con Tailscale, contraseña, app instalable y atajo de Siri.
+3. Rutinas editables y avisos.
+4. Perfil, registros, recordatorios, "sueño" y panel.
+5. Tiempo, calendario iCal, búsqueda web y especialistas por voz.
 
-**Extras:**
+Pendiente (propón el plan al usuario antes de empezar):
+- **Gmail:** requiere OAuth en Google Cloud. Explícale los pasos y su coste, que es cero.
 - **"Oye, Jarvis":** entrenar un modelo propio de openWakeWord (cuaderno oficial en Colab) y
   apuntar `JARVIS_ACTIVACION` a su `.onnx`.
-- **Voz clonada:** solo con consentimiento (F5-TTS-MLX o XTTS-v2 en local); implementarla como
-  otra clase con la interfaz de `Voz` (`sintetizar`, `decir`).
+- **Voz clonada:** solo con consentimiento (F5-TTS-MLX o XTTS-v2 en local). Va como otra clase
+  con la interfaz de `Voz` (`sintetizar`, `decir`).
+- **Respuestas en streaming:** para que empiece a hablar antes de terminar de pensar.
+- **Pasarlo a la nube:** para que funcione con el Mac apagado.

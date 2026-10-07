@@ -1,28 +1,56 @@
-"""Servidor de Jarvis: la app web y la API que usarán el móvil y el Apple Watch."""
+"""Servidor de Jarvis: la app web, el panel y la API que usan el iPhone y el Apple Watch."""
 
 from __future__ import annotations
 
 import logging
+import secrets
 from pathlib import Path
 
 import anthropic
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from .cerebro import Cerebro, separar_detalle
+from .iconos import icono
 
 WEB = Path(__file__).parent / "web"
 log = logging.getLogger("jarvis")
+PUBLICAS = {"/manifest.webmanifest", "/icono-180.png", "/icono-512.png"}
 
 
 class Mensaje(BaseModel):
     texto: str
 
 
-def crear_app(cerebro: Cerebro, oido=None, voz=None) -> FastAPI:
-    """``oido`` y ``voz`` son opcionales: sin ellos la app funciona solo con texto."""
+class CambioRutina(BaseModel):
+    nombre: str
+    hora: str | None = None
+    activa: bool | None = None
+
+
+def crear_app(cerebro: Cerebro, oido=None, voz=None, token: str = "") -> FastAPI:
+    """``oido`` y ``voz`` son opcionales: sin ellos la app funciona solo con texto.
+    Con ``token``, cada petición debe traerlo (cabecera Bearer, cookie o ?token=)."""
     app = FastAPI(title="Jarvis")
+
+    def token_valido(valor: str | None) -> bool:
+        return bool(valor) and secrets.compare_digest(valor, token)
+
+    @app.middleware("http")
+    async def proteger(request: Request, call_next):
+        if not token or request.url.path in PUBLICAS:
+            return await call_next(request)
+        cabecera = request.headers.get("authorization", "")
+        por_url = request.query_params.get("token")
+        if not (token_valido(cabecera.removeprefix("Bearer ").strip())
+                or token_valido(request.cookies.get("jarvis_token")) or token_valido(por_url)):
+            return JSONResponse({"detail": "Acceso no autorizado"}, status_code=401)
+        respuesta = await call_next(request)
+        if token_valido(por_url):  # recordar el acceso en este navegador
+            respuesta.set_cookie("jarvis_token", token, max_age=60 * 60 * 24 * 365,
+                                 httponly=True, samesite="lax", secure=request.url.scheme == "https")
+        return respuesta
 
     def responder(texto: str) -> dict:
         texto = texto.strip()
@@ -32,6 +60,8 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None) -> FastAPI:
             respuesta = cerebro.pensar(texto)
         except anthropic.AuthenticationError:
             raise HTTPException(502, "Falta la clave de Claude: configure ANTHROPIC_API_KEY, señor.")
+        except anthropic.RateLimitError:
+            raise HTTPException(502, "Mis sistemas están saturados, señor. Inténtelo en un momento.")
         except anthropic.APIConnectionError:
             raise HTTPException(502, "No puedo conectar con mis sistemas, señor. ¿Hay internet?")
         except anthropic.APIError as e:
@@ -40,24 +70,56 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None) -> FastAPI:
         hablado, detalle = separar_detalle(respuesta)
         return {"tu": texto, "respuesta": hablado, "detalle": detalle}
 
+    def pagina(nombre: str, request: Request) -> str:
+        html = (WEB / nombre).read_text(encoding="utf-8")
+        # El acceso directo del iPhone guarda su propia sesión: le pasamos el token en la URL.
+        sufijo = f"?token={token}" if token else ""
+        return html.replace("__TOKEN_QS__", sufijo)
+
+    # --- páginas ---------------------------------------------------------------
+
     @app.get("/", response_class=HTMLResponse)
-    def inicio():
-        return (WEB / "index.html").read_text(encoding="utf-8")
+    def inicio(request: Request):
+        return pagina("index.html", request)
+
+    @app.get("/panel", response_class=HTMLResponse)
+    def panel(request: Request):
+        return pagina("panel.html", request)
+
+    @app.get("/manifest.webmanifest")
+    def manifest(token: str = ""):
+        inicio_url = f"/?token={token}" if token and token_valido(token) else "/"
+        return JSONResponse({
+            "name": "Jarvis", "short_name": "Jarvis", "start_url": inicio_url, "display": "standalone",
+            "background_color": "#05090f", "theme_color": "#05090f", "lang": "es",
+            "icons": [{"src": "/icono-180.png", "sizes": "180x180", "type": "image/png"},
+                      {"src": "/icono-512.png", "sizes": "512x512", "type": "image/png"}],
+        }, media_type="application/manifest+json")
+
+    @app.get("/icono-{tamano}.png")
+    def png(tamano: int):
+        if tamano not in (180, 512):
+            raise HTTPException(404)
+        return Response(icono(tamano), media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=604800"})
+
+    # --- conversación ----------------------------------------------------------
 
     @app.get("/api/estado")
     def estado():
-        return {
-            "voz": voz is not None,
-            "oido": oido is not None,
-            "agentes": {
-                n: cerebro.agente(n).memoria.estadisticas() for n in ["cerebro", *cerebro.especialistas]
-            },
-        }
+        return {"voz": voz is not None, "oido": oido is not None}
 
     @app.post("/api/mensaje")
     def mensaje(m: Mensaje):
-        """Texto -> respuesta. Es lo que usará el atajo de Siri en el Apple Watch."""
         return responder(m.texto)
+
+    @app.post("/api/siri", response_class=PlainTextResponse)
+    def siri(m: Mensaje):
+        """Para el atajo de Siri (iPhone y Apple Watch): devuelve solo el texto a leer."""
+        try:
+            return responder(m.texto)["respuesta"] or "No le he entendido, señor."
+        except HTTPException as e:
+            return str(e.detail)
 
     @app.post("/api/audio")
     def audio(archivo: UploadFile = File(...)):
@@ -80,5 +142,50 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None) -> FastAPI:
     def nueva():
         cerebro.nueva_sesion()
         return {"ok": True}
+
+    @app.get("/api/avisos")
+    def avisos(desde: int = 0):
+        """Mensajes que Jarvis ha lanzado por su cuenta (rutinas, recordatorios)."""
+        return cerebro.avisos.desde(desde)
+
+    # --- panel -----------------------------------------------------------------
+
+    @app.get("/api/panel")
+    def datos_panel():
+        agentes = {}
+        for nombre in ["cerebro", *cerebro.especialistas]:
+            a = cerebro.agente(nombre)
+            agentes[nombre] = {
+                "rol": a.rol,
+                "estadisticas": a.memoria.estadisticas(),
+                "aprendizajes": [dict(f) for f in a.memoria.aprendizajes(limite=15)],
+                "registros": [dict(f) for f in a.memoria.consultar_registros("", 30)][-20:],
+            }
+        return {
+            "perfil": cerebro.perfil_usuario.datos,
+            "rutinas": cerebro.rutinas.lista(),
+            "recordatorios": [dict(r) for r in cerebro.recordatorios.activos()],
+            "agentes": agentes,
+        }
+
+    @app.post("/api/rutina")
+    def cambiar_rutina(c: CambioRutina):
+        if c.nombre not in cerebro.rutinas.lista():
+            raise HTTPException(404, "No existe esa rutina")
+        try:
+            return cerebro.rutinas.configurar(c.nombre, hora=c.hora, activa=c.activa)
+        except ValueError:
+            raise HTTPException(400, "Hora no válida (usa HH:MM)")
+
+    @app.delete("/api/recordatorio/{id_}")
+    def borrar_recordatorio(id_: int):
+        return {"ok": cerebro.recordatorios.borrar(id_)}
+
+    @app.delete("/api/aprendizaje/{agente}/{id_}")
+    def borrar_aprendizaje(agente: str, id_: int):
+        try:
+            return {"ok": cerebro.agente(agente).memoria.olvidar(id_)}
+        except KeyError:
+            raise HTTPException(404, "No existe ese agente")
 
     return app

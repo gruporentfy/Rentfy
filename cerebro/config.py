@@ -25,6 +25,18 @@ class Config:
     # --- Tú ---
     ciudad: str = field(default_factory=lambda: _env("JARVIS_CIUDAD", "Bilbao"))
     zona_horaria: str = field(default_factory=lambda: _env("JARVIS_ZONA_HORARIA", "Europe/Madrid"))
+    latitud: float = field(default_factory=lambda: float(_env("JARVIS_LATITUD", "43.263")))
+    longitud: float = field(default_factory=lambda: float(_env("JARVIS_LONGITUD", "-2.935")))
+    # Enlace secreto iCal de tu calendario (Google Calendar > Configuración > Dirección secreta en formato iCal)
+    url_calendario: str = field(default_factory=lambda: _env("JARVIS_CALENDARIO", ""))
+    # Tras este tiempo sin hablar, Jarvis empieza una conversación nueva (la memoria se mantiene).
+    minutos_sesion: int = field(default_factory=lambda: int(_env("JARVIS_MINUTOS_SESION", "30")))
+
+    # --- Avisos ---
+    # Tema de ntfy (app gratuita en el iPhone) para recibir notificaciones push. Vacío = desactivado.
+    ntfy_tema: str = field(default_factory=lambda: _env("JARVIS_NTFY", ""))
+    ntfy_servidor: str = field(default_factory=lambda: _env("JARVIS_NTFY_SERVIDOR", "https://ntfy.sh"))
+    hablar_avisos: bool = field(default_factory=lambda: _env("JARVIS_HABLAR_AVISOS", "1") == "1")
 
     # --- Voz (habla) ---
     voz: str = field(default_factory=lambda: _env("JARVIS_VOZ", "Jorge"))  # voz de macOS (`say -v '?'`)
@@ -40,3 +52,8 @@ class Config:
     # --- Servidor ---
     host: str = field(default_factory=lambda: _env("JARVIS_HOST", "127.0.0.1"))
     puerto: int = field(default_factory=lambda: int(_env("JARVIS_PUERTO", "8765")))
+    # Contraseña de acceso para el móvil y el reloj. Vacía = sin contraseña (solo uso local).
+    token: str = field(default_factory=lambda: _env("JARVIS_TOKEN", ""))
+
+    def __post_init__(self):
+        self.directorio_datos = Path(self.directorio_datos)

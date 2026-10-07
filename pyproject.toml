@@ -1,6 +1,6 @@
 [project]
 name = "cerebro"
-version = "0.1.0"
+version = "0.2.0"
 description = "Jarvis: un asistente por voz con un sistema de agentes con memoria propia que gestiona tu día a día, negocios, entrenamientos y estudios."
 requires-python = ">=3.10"
 dependencies = [
@@ -9,6 +9,8 @@ dependencies = [
     "uvicorn>=0.29",
     "python-multipart>=0.0.9",
     "numpy>=1.26",
+    "icalendar>=6",
+    "recurring-ical-events>=3",
 ]
 
 [project.optional-dependencies]

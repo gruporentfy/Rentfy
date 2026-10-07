@@ -54,6 +54,19 @@ def main() -> None:
     config = Config()
     cerebro = Cerebro(config)
     voz, oido = _cargar_voz(config), _cargar_oido(config)
+    if oido:  # cargar Whisper ya, para que la primera pregunta no espere
+        def precargar():
+            try:
+                oido._cargar()
+            except Exception as e:
+                print(f"[aviso] No se pudo cargar el oído (Whisper): {e}. Ejecuta: bash instalar_mac.sh")
+
+        threading.Thread(target=precargar, daemon=True).start()
+
+    from .notificaciones import Notificador
+    from .programador import Programador
+
+    Programador(cerebro, Notificador(config, cerebro.avisos, voz)).iniciar()
 
     if not args.sin_escucha and voz and oido and importlib.util.find_spec("openwakeword"):
         from .voz.activacion import Escucha
@@ -62,9 +75,11 @@ def main() -> None:
         threading.Thread(target=escucha.ejecutar, daemon=True, name="escucha").start()
 
     url = f"http://{'localhost' if config.host == '127.0.0.1' else config.host}:{config.puerto}"
-    print(f"Jarvis en {url}")
+    if config.token:
+        url += f"/?token={config.token}"
+    print(f"Jarvis en {url.split('?')[0]}")
     if voz:
         threading.Thread(target=voz.decir, args=("Sistemas en línea, señor.",), daemon=True).start()
     if not args.sin_navegador:
         threading.Timer(1.5, webbrowser.open, args=(url,)).start()
-    uvicorn.run(crear_app(cerebro, oido, voz), host=config.host, port=config.puerto, log_level="warning")
+    uvicorn.run(crear_app(cerebro, oido, voz, config.token), host=config.host, port=config.puerto, log_level="warning")

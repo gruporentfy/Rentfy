@@ -41,6 +41,7 @@ class Voz:
         if not shutil.which("say"):
             raise RuntimeError("La voz local necesita macOS (comando `say`).")
         self.nombre_voz = elegir_voz(config.voz, listar_voces_espanol())
+        self._hablando = threading.Lock()  # nunca dos frases a la vez (respuesta + aviso)
 
     def sintetizar(self, texto: str) -> bytes:
         """Devuelve un WAV con la frase dicha por Jarvis."""
@@ -72,16 +73,23 @@ class Voz:
         Prepara la siguiente frase mientras suena la actual, para que empiece a hablar enseguida.
         """
         frases = dividir_frases(limpiar_para_voz(texto))
+        if not frases:
+            return
         cola: Queue = Queue(maxsize=2)
 
         def preparar():
-            for frase in frases:
-                cola.put(self.sintetizar(frase))
-            cola.put(None)
+            try:
+                for frase in frases:
+                    cola.put(self.sintetizar(frase))
+            except Exception as e:  # nunca dejar la cola esperando
+                print(f"[aviso] Error de voz: {e}")
+            finally:
+                cola.put(None)
 
-        threading.Thread(target=preparar, daemon=True).start()
-        while (audio := cola.get()) is not None:
-            self.reproducir_wav(audio)
+        with self._hablando:
+            threading.Thread(target=preparar, daemon=True).start()
+            while (audio := cola.get()) is not None:
+                self.reproducir_wav(audio)
 
 
 def listar_voces_espanol() -> list[tuple[str, str]]:

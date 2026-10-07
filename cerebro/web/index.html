@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Jarvis">
 <meta name="theme-color" content="#05090f">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest__TOKEN_QS__">
+<link rel="apple-touch-icon" href="/icono-180.png">
+<link rel="icon" href="/icono-180.png">
 <title>Jarvis</title>
 <style>
   :root {
@@ -55,10 +59,16 @@
     flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--borde);
     background: var(--panel); color: var(--texto); font-size: 16px; min-width: 0;
   }
+  nav { position: fixed; top: calc(env(safe-area-inset-top) + 12px); right: 16px; display: flex; gap: 14px; }
+  nav a, nav button { color: var(--tenue); font-size: 13px; text-decoration: none; background: none; border: 0; cursor: pointer; padding: 0; }
+  nav a:hover, nav button:hover { color: var(--cian); }
+  .aviso { border-color: var(--cian); }
+  .aviso b { color: var(--cian); display: block; font-size: 13px; letter-spacing: .05em; }
   button.enviar { padding: 0 18px; border-radius: 12px; border: 1px solid var(--cian); background: transparent; color: var(--cian); font-size: 16px; }
 </style>
 </head>
 <body data-modo="espera">
+  <nav><button id="nueva" title="Empezar una conversación nueva">Nueva</button><a href="/panel">Panel</a></nav>
   <header>
     <h1>JARVIS</h1>
     <div id="estado">En línea</div>
@@ -175,6 +185,34 @@ reactor.addEventListener("pointerdown", (e) => { e.preventDefault(); empezarGrab
 ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => reactor.addEventListener(ev, pararGrabacion));
 document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT" && !e.repeat) { e.preventDefault(); empezarGrabacion(); } });
 document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "INPUT") pararGrabacion(); });
+
+$("#nueva").addEventListener("click", async () => {
+  await fetch("/api/nueva", { method: "POST" });
+  chat.innerHTML = "";
+  modo("espera", "Conversación nueva");
+});
+
+// Avisos que Jarvis lanza por su cuenta (resumen de la mañana, recordatorios...).
+let ultimoAviso = null;
+async function revisarAvisos() {
+  try {
+    const lista = await (await fetch("/api/avisos?desde=" + (ultimoAviso ?? 0))).json();
+    if (ultimoAviso === null) { ultimoAviso = lista.length ? lista[lista.length - 1].id : 0; return; }
+    for (const a of lista) {
+      ultimoAviso = a.id;
+      const div = document.createElement("div");
+      div.className = "msg jarvis aviso";
+      div.innerHTML = "<b></b>";
+      div.querySelector("b").textContent = a.titulo;
+      div.append(a.texto);
+      chat.appendChild(div);
+      div.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (!capacidades.voz && document.visibilityState === "visible") hablar(a.texto);
+    }
+  } catch (_) {}
+}
+revisarAvisos();
+setInterval(revisarAvisos, 20000);
 
 fetch("/api/estado").then((r) => r.json()).then((e) => { capacidades = e; }).catch(() => modo("espera", "Sin conexión con Jarvis"));
 </script>
