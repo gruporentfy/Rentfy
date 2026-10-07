@@ -1,0 +1,19 @@
+[project]
+name = "cerebro"
+version = "0.1.0"
+description = "Cerebro: un sistema de agentes con memoria propia que gestiona tu día a día, negocios, entrenamientos y estudios."
+requires-python = ">=3.10"
+dependencies = ["anthropic>=1.11"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+cerebro = "cerebro.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["cerebro"]
