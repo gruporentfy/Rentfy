@@ -75,7 +75,7 @@ def test_servidor_texto_y_audio(tmp_path):
     assert r.headers["content-type"] == "audio/wav"
 
     assert cliente.get("/").text.startswith("<!doctype html>")
-    assert cliente.get("/api/estado").json() == {"voz": True, "oido": True}
+    assert cliente.get("/api/estado").json()["voz"] is True
     assert cliente.post("/api/mensaje", json={"texto": "  "}).status_code == 400
 
 

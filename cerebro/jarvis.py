@@ -55,6 +55,14 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     config = Config()
+    import socket
+
+    with socket.socket() as prueba:
+        if prueba.connect_ex(("127.0.0.1", config.puerto)) == 0:
+            print(f"\n[ERROR] Ya hay otro Jarvis funcionando (puerto {config.puerto} ocupado).")
+            print("Ciérralo primero (Ctrl+C en su ventana, o:  lsof -ti:%d | xargs kill ) y vuelve a arrancar.\n" % config.puerto)
+            print("Si activaste el arranque automático:  bash arranque_automatico.sh quitar")
+            return
     cerebro = Cerebro(config)
     voz, oido = _cargar_voz(config), _cargar_oido(config)
     if oido:  # cargar Whisper ya, para que la primera pregunta no espere
@@ -80,7 +88,9 @@ def main() -> None:
     url = f"http://{'localhost' if config.host == '127.0.0.1' else config.host}:{config.puerto}"
     if config.token:
         url += f"/?token={config.token}"
-    print(f"Jarvis en {url.split('?')[0]}")
+    from .servidor import VERSION
+
+    print(f"Jarvis {VERSION} en {url.split('?')[0]}")
     if voz:
         threading.Thread(target=voz.decir, args=("Sistemas en línea, señor.",), daemon=True).start()
     if not args.sin_navegador:

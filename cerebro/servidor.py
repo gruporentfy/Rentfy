@@ -16,6 +16,9 @@ from .iconos import icono
 
 WEB = Path(__file__).parent / "web"
 log = logging.getLogger("jarvis")
+VERSION = "0.3.1"
+# Que el navegador cargue siempre la última versión de la app tras actualizar Jarvis.
+SIN_CACHE = {"Cache-Control": "no-store"}
 PUBLICAS = {"/manifest.webmanifest", "/icono-180.png", "/icono-512.png"}
 
 
@@ -86,11 +89,11 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None, token: str = "") -> FastAPI
 
     @app.get("/", response_class=HTMLResponse)
     def inicio(request: Request):
-        return pagina("index.html", request)
+        return HTMLResponse(pagina("index.html", request), headers=SIN_CACHE)
 
     @app.get("/panel", response_class=HTMLResponse)
     def panel(request: Request):
-        return pagina("panel.html", request)
+        return HTMLResponse(pagina("panel.html", request), headers=SIN_CACHE)
 
     @app.get("/manifest.webmanifest")
     def manifest(token: str = ""):
@@ -113,7 +116,7 @@ def crear_app(cerebro: Cerebro, oido=None, voz=None, token: str = "") -> FastAPI
 
     @app.get("/api/estado")
     def estado():
-        return {"voz": voz is not None, "oido": oido is not None}
+        return {"voz": voz is not None, "oido": oido is not None, "version": VERSION}
 
     @app.post("/api/mensaje")
     def mensaje(m: Mensaje):
